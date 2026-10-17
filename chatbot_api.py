@@ -7,15 +7,12 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
 from llama_index.core import (
-    VectorStoreIndex, 
-    SimpleDirectoryReader, 
     Settings, 
     StorageContext, 
     load_index_from_storage
 )
 from llama_index.llms.openai_like import OpenAILike
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.readers.file import PyMuPDFReader
 
 # Carrega variáveis de ambiente (.env)
 load_dotenv()
@@ -34,12 +31,10 @@ Settings.llm = OpenAILike(
     max_tokens=2048
 )
 
-# 2. Configurar o Motor Local e Fatiamento Cirúrgico
-Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-m3")
-Settings.chunk_size = 512       
-Settings.chunk_overlap = 50     
+# 2. Configurar o mesmo Modelo Leve usado no gerar_banco.py
+Settings.embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
-PASTA_DADOS = "base_profbio"
+
 PASTA_BANCO = "banco_vetores"
 
 # ==========================================
@@ -48,7 +43,6 @@ PASTA_BANCO = "banco_vetores"
 try:
     with open("links_profbio.json", "r", encoding="utf-8") as f:
         urls_brutas = json.load(f)
-        # Converte as chaves (nomes dos arquivos) para letras minúsculas
         URLS_DOCUMENTOS = {chave.lower(): valor for chave, valor in urls_brutas.items()}
     print(f"🔗 Mapeamento blindado carregado: {len(URLS_DOCUMENTOS)} links prontos.")
 except FileNotFoundError:
@@ -62,23 +56,11 @@ motor_de_chat = None
 
 def inicializar_banco():
     if not os.path.exists(PASTA_BANCO):
-        print("📚 A criar banco fatiado com alta precisão (PyMuPDF)...")
-        leitor_pdf = PyMuPDFReader()
-        documentos = SimpleDirectoryReader(
-            PASTA_DADOS, 
-            file_extractor={".pdf": leitor_pdf}
-        ).load_data()
+        raise FileNotFoundError(f"⚠️ A pasta '{PASTA_BANCO}' não existe. Rode o script 'gerar_banco.py' localmente primeiro!")
         
-        print(f"🚀 A vetorizar {len(documentos)} páginas. Isto pode demorar alguns minutos...")
-        index = VectorStoreIndex.from_documents(documentos, show_progress=True)
-        
-        print("💾 A guardar o banco de dados no disco (PASTA_BANCO)...")
-        index.storage_context.persist(persist_dir=PASTA_BANCO)
-        return index
-    else:
-        print("⚡ Banco de dados vetorial carregado a partir do disco!")
-        storage_context = StorageContext.from_defaults(persist_dir=PASTA_BANCO)
-        return load_index_from_storage(storage_context)
+    print("⚡ Banco de dados vetorial carregado a partir do disco!")
+    storage_context = StorageContext.from_defaults(persist_dir=PASTA_BANCO)
+    return load_index_from_storage(storage_context)
 
 # Carrega a IA para a memória RAM quando o servidor arranca
 @asynccontextmanager
@@ -115,31 +97,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Estrutura do payload recebido do Bubble
 class RequisicaoChat(BaseModel):
     mensagem: str
 
-# Rota principal (Endpoint /chat)
+# Rota principal - AGORA ASSÍNCRONA E ULTRA LEVE
 @app.post("/chat")
-def rota_chat(req: RequisicaoChat):
-    # 1. Consulta a IA
-    resposta_ia = motor_de_chat.chat(req.mensagem)
+async def rota_chat(req: RequisicaoChat):
+    # 1. Consulta a IA de forma assíncrona (libera a CPU para outros alunos)
+    resposta_ia = await motor_de_chat.achat(req.mensagem)
     
     # 2. Extrai e mapeia as referências
     fontes_encontradas = {}
     for node in resposta_ia.source_nodes:
-        # Extrai o nome do arquivo original
         nome_original = node.metadata.get('file_name', 'Documento Desconhecido')
-        # Força para minúsculo para fazer a busca segura no dicionário
         nome_busca = nome_original.lower()
-        
-        # Faz a associação. Se falhar, usa a página genérica de normas
         url_doc = URLS_DOCUMENTOS.get(nome_busca, URL_FALLBACK)
-        
-        # Salva o nome original limpo e a URL correspondente
         fontes_encontradas[nome_original] = url_doc
         
-    # 3. Formata as referências como uma lista de dicionários para o Bubble ler
     lista_referencias = [{"titulo": k, "link": v} for k, v in fontes_encontradas.items()]
     
     return {
@@ -149,5 +123,4 @@ def rota_chat(req: RequisicaoChat):
 
 if __name__ == "__main__":
     import uvicorn
-    # Arranque do servidor local (Pode ser utilizado para testes antes do deploy)
     uvicorn.run(app, host="0.0.0.0", port=8000)

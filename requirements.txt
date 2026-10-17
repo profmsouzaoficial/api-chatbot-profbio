@@ -4,14 +4,7 @@ fastapi
 uvicorn
 pydantic
 python-dotenv
-llama-index
+llama-index-core
 llama-index-llms-openai-like
 llama-index-embeddings-huggingface
-llama-index-readers-file
-pymupdf
-requests
-beautifulsoup4
-docx2txt
-transformers==4.41.2
 sentence-transformers==3.0.1
-huggingface-hub==0.23.4

@@ -9,3 +9,4 @@ __pycache__/
 
 # NOTA: NÃO vamos ignorar a pasta 'banco_vetores' nem 'base_profbio'. 
 # Elas DEVEM subir para o GitHub para a API arrancar instantaneamente.
+.Rproj.user
