@@ -8,3 +8,5 @@ llama-index-core
 llama-index-llms-openai-like
 llama-index-embeddings-huggingface
 sentence-transformers==3.0.1
+transformers==4.41.2
+huggingface-hub==0.23.4
